@@ -4,18 +4,32 @@ platform: linux
 image_resource:
   type: docker-image
   source:
-    repository: concourse/bosh-cli
+    repository: concourse/bin-testflight-ci
 
 inputs:
+- name: linux-binary-final
+- name: linux-binary
 - name: concourse
+- name: fly-final
+- name: fly-rc
 
 params:
-  BOSH_ENVIRONMENT:
-  BOSH_DEPLOYMENT:
-  BOSH_CLIENT:
-  BOSH_CLIENT_SECRET:
-  BOSH_CA_CERT:
-  BOSH_KEY:
+  WEB_IP: 127.0.0.1
+  WEB_USERNAME: "test"
+  WEB_PASSWORD: "test"
+  PIPELINE_NAME: test-pipeline
+  QUICKSTART: true
 
 run:
-  path: concourse/ci/scripts/manual-downgrade
+  path: bash
+  args:
+  - -c
+  - |
+    set -e
+
+    source concourse/src/github.com/concourse/bin/ci/start-bin
+    prep && start
+    concourse/ci/scripts/create-uber-pipeline
+    concourse/ci/scripts/manual-downgrade
+    concourse/ci/scripts/verify-uber-pipeline
+    concourse/ci/scripts/testflight

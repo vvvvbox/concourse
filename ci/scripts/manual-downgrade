@@ -1,8 +1,23 @@
 #!/bin/bash
 
-set -e
+set -x
 
-eval $(ssh-agent)
-ssh-add <(echo "$BOSH_KEY")
-
-bosh ssh web -c "find /var/vcap/data/jobs/atc -name experimental_downgrade_db -print -quit | xargs sh -c"
+CONCOURSE_OLD=linux-binary-final/concourse_linux_amd64
+chmod +x $CONCOURSE_OLD
+if [ "$QUICKSTART" == "true" ]; then
+  ARGS="quickstart \
+    --postgres-socket /var/run/postgresql \
+    --worker-work-dir /scratch/concourse \
+    --tsa-log-level fatal \
+    --log-level fatal"
+else
+  ARGS="web \
+    --postgres-socket /var/run/postgresql \
+    --tsa-host-key /etc/concourse/tsa-host \
+    --tsa-authorized-keys /etc/concourse/worker.pub \
+    --tsa-log-level fatal \
+    --log-level fatal"
+fi
+migrate_to=$($CONCOURSE_OLD $ARGS --supported-db-version | grep -v worker | grep -v guardian | grep -v baggageclaim)
+$CONCOURSE $ARGS --migrate-db-to-version $migrate_to
+echo $?
