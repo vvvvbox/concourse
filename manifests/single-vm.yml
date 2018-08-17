@@ -61,6 +61,15 @@ instance_groups:
         roles:
         - name: atc
           password: ((postgres_password))
+        hooks:
+          timeout: 30
+          post_start: |
+            #!/bin/bash
+            while true; do
+              if ${PACKAGE_DIR}/bin/psql -p ${PORT} -U vcap atc -c "GRANT CREATE on DATABASE atc TO atc"; then
+                break
+              fi
+            done
 
   - release: concourse
     name: worker
