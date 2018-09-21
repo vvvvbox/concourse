@@ -15,6 +15,7 @@ import (
 	"github.com/concourse/concourse/atc/atccmd"
 	"github.com/concourse/concourse/atc/postgresrunner"
 	concourse "github.com/concourse/concourse/go-concourse/concourse"
+	helpers "github.com/concourse/concourse/testflight/helpers"
 	"github.com/concourse/flag"
 	flags "github.com/jessevdk/go-flags"
 	. "github.com/onsi/ginkgo"
@@ -66,10 +67,7 @@ var _ = Describe("ATC Integration Test", func() {
 	})
 
 	doLogin := func(username, password string) http.Client {
-		fmt.Println("====== do login function")
 		loginURL := fmt.Sprintf("http://127.0.0.1:%v/sky/login", cmd.BindPort)
-
-		fmt.Println("========== login URL: ", loginURL)
 
 		jar, err := cookiejar.New(nil)
 		Expect(err).NotTo(HaveOccurred())
@@ -86,11 +84,7 @@ var _ = Describe("ATC Integration Test", func() {
 			"password": []string{password},
 		}
 
-		fmt.Println("======= set username/password values")
-
 		resp, err = client.PostForm(location, data)
-		fmt.Println("========== sent post data with client")
-
 		Expect(err).NotTo(HaveOccurred())
 
 		bodyBytes, err := ioutil.ReadAll(resp.Body)
@@ -119,74 +113,13 @@ var _ = Describe("ATC Integration Test", func() {
 	})
 
 	FContext("Teams", func() {
-		teamName := "random-team"
+		teamName := "random"
 		var client http.Client
-		var ccClient concourse.Client
+		var goConcourseClient concourse.Client
+		var atcURL string
+		var team atc.Team
 
-		JustBeforeEach(func() {
-			client = doLogin("test", "test")
-			fmt.Println("============= cmd bind port in just before each for teams:", cmd.BindPort)
-			res := fmt.Sprintf("http://127.0.0.1:%v", cmd.BindPort)
-			ccClient = concourse.NewClient(res, &client, false)
-		})
-
-		Context("when there are defined roles for users", func() {
-			Context("when the role is viewer", func() {
-				JustBeforeEach(func() {
-
-					team := atc.Team{
-						Name: teamName,
-						Auth: atc.TeamAuth{
-							"viewer": atc.TeamRole{
-								"users":  []string{"local:v-user"},
-								"groups": []string{},
-							},
-						},
-					}
-
-					_, _, _, err := ccClient.Team(teamName).CreateOrUpdate(team)
-					Expect(err).ToNot(HaveOccurred())
-
-					teams, err := ccClient.ListTeams()
-					Expect(err).ToNot(HaveOccurred())
-					Expect(teams).To(ContainElement(team))
-
-					// resp, err = client.Get(fmt.Sprintf("http://127.0.0.1:%v/api/v1/teams", cmd.BindPort))
-					// Expect(err).ToNot(HaveOccurred())
-					// Expect(resp.StatusCode).To(Equal(http.StatusOK))
-
-					// bodyBytes, err := ioutil.ReadAll(resp.Body)
-					// Expect(string(bodyBytes)).To(ContainSubstring("random/viewer"))
-					// Expect(string(bodyBytes)).To(ContainSubstring("local:viewer"))
-
-					pipelineData := []byte(`
----
-jobs:
-- name: simple
-	plan:
-	- task: simple-task
-		config:
-			platform: linux
-			image_resource:
-				type: registry-image
-				source: {repository: busybox}
-			run:
-				path: echo
-				args: ["Hello, world!"]
-`)
-					ccClient.Team(teamName).CreateOrUpdatePipelineConfig("pipeline-name", "0", pipelineData, false)
-
-					doLogin("v-user", "v-user")
-				})
-
-				It("should be able to view pipelines", func() {
-					resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%v/api/v1/teams/%s/pipelines", cmd.BindPort, teamName))
-					Expect(err).ToNot(HaveOccurred())
-					Expect(resp.StatusCode).To(Equal(http.StatusOK))
-				})
-
-				It("should NOT be able to set pipelines", func() {
-					pipelineData := []byte(`
+		pipelineData := []byte(`
 ---
 jobs:
 - name: simple
@@ -202,9 +135,105 @@ jobs:
 				args: ["Hello, world!"]
 					`)
 
-					_, _, _, err := ccClient.Team(teamName).CreateOrUpdatePipelineConfig("pipeline-new", "0", pipelineData, false)
+		JustBeforeEach(func() {
+			client = doLogin("test", "test")
+			atcURL = fmt.Sprintf("http://127.0.0.1:%v", cmd.BindPort)
+			goConcourseClient = helpers.ConcourseClient(atcURL, "test", "test")
+		})
 
+		FContext("when there are defined roles for users", func() {
+			Context("when the role is viewer", func() {
+				JustBeforeEach(func() {
+					team = atc.Team{
+						Name: teamName,
+						Auth: atc.TeamAuth{
+							"viewer": atc.TeamRole{
+								"users":  []string{"local:v-user"},
+								"groups": []string{},
+							},
+							"owner": atc.TeamRole{
+								"users":  []string{"local:test"},
+								"groups": []string{},
+							},
+						},
+					}
+
+					createdTeam, _, _, err := goConcourseClient.Team(teamName).CreateOrUpdate(team)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(createdTeam.Name).To(Equal(team.Name))
+					Expect(createdTeam.Auth).To(Equal(team.Auth))
+
+					// why does this pipelineConfig throw a malformed error?
+					pipelineData := []byte(`
+---
+jobs:
+- name: simple
+`)
+
+					// Have to login again to get token with new team user roles in order to
+					// have the permissions to set a pipeline
+					goConcourseClient = helpers.ConcourseClient(atcURL, "test", "test")
+					_, _, _, err = goConcourseClient.Team(teamName).CreateOrUpdatePipelineConfig("pipeline-name", "0", pipelineData, false)
+					Expect(err).ToNot(HaveOccurred())
+				})
+
+				It("should be able to view pipelines", func() {
+					// go concourse-client reinitialization with v-user to generate new token
+					goConcourseClient = helpers.ConcourseClient(atcURL, "v-user", "v-user")
+
+					pipelines, err := goConcourseClient.Team(teamName).ListPipelines()
+					Expect(err).ToNot(HaveOccurred())
+					Expect(pipelines).ToNot(BeNil())
+				})
+
+				It("should NOT be able to set pipelines", func() {
+					_, _, _, err := goConcourseClient.Team(teamName).CreateOrUpdatePipelineConfig("pipeline-new", "0", pipelineData, false)
 					Expect(err).To(HaveOccurred())
+				})
+			})
+
+			Context("when the role is member", func() {
+				JustBeforeEach(func() {
+					team = atc.Team{
+						Name: teamName,
+						Auth: atc.TeamAuth{
+							"member": atc.TeamRole{
+								"users":  []string{"local:v-member"},
+								"groups": []string{},
+							},
+							"owner": atc.TeamRole{
+								"users":  []string{"local:test"},
+								"groups": []string{},
+							},
+						},
+					}
+				})
+
+				It("should be able to view the pipelines", func() {
+				})
+
+				It("should NOT be able to set pipelines", func() {
+				})
+			})
+
+			Context("when the role is owner", func() {
+				JustBeforeEach(func() {
+					team = atc.Team{
+						Name: teamName,
+						Auth: atc.TeamAuth{
+							"owner": atc.TeamRole{
+								"users":  []string{"local:test"},
+								"groups": []string{},
+							},
+						},
+					}
+				})
+
+				// these 2 are kind of tested in the initial BeforeEach...
+				It("should be able to view pipelines", func() {
+				})
+
+				It("should be able to set pipelines", func() {
 				})
 			})
 		})
