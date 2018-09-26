@@ -1,4 +1,7 @@
-module DragState exposing (..)
+module DragState exposing
+    ( DragState(..)
+    , map
+    )
 
 import DragList
 

@@ -1,13 +1,14 @@
-module DropZone exposing (..)
+module DropZone exposing (DropZoneState(..), dragEnter, dropZones, off, view)
 
 import DragEvent
 import DragList
-import List.Extra
-import RestList
 import Html exposing (Html)
 import Html.Attributes exposing (classList)
 import Html.Events exposing (on)
 import Json.Decode
+import List.Extra
+import Maybe.Extra
+import RestList
 
 
 type DropZoneState a
@@ -44,36 +45,30 @@ view : DropZoneState a -> Html (DragEvent.Msg a)
 view dropZoneState =
     case dropZoneState of
         On ->
-            Html.div
-                [ classList
-                    [ ( "drop-area", True )
-                    , ( "active", False )
-                    , ( "over", True )
-                    , ( "animation", True )
-                    ]
-                , on "dragleave" (Json.Decode.succeed DragEvent.DragLeave)
-                ]
-                [ Html.text "" ]
+            view_ True
+                [ on "dragleave" (Json.Decode.succeed DragEvent.DragLeave) ]
 
         Off { dragEnter } ->
-            Html.div
-                [ classList
-                    [ ( "drop-area", True )
-                    , ( "active", True )
-                    , ( "over", False )
-                    , ( "animation", False )
-                    ]
-                , on "dragenter" (Json.Decode.succeed (DragEvent.DragEnter dragEnter))
-                ]
-                [ Html.text "" ]
+            view_ False
+                [ on "dragenter" (Json.Decode.succeed (DragEvent.DragEnter dragEnter)) ]
 
         Disabled ->
-            Html.div
-                [ classList
-                    [ ( "drop-area", True )
-                    , ( "active", False )
-                    , ( "over", False )
-                    , ( "animation", False )
-                    ]
-                ]
-                [ Html.text "" ]
+            view_ False []
+
+
+view_ : Bool -> List (Html.Attribute msg) -> Html msg
+view_ over dragAttrs =
+    Html.div
+        (styleAttrs over ++ dragAttrs)
+        [ Html.text "" ]
+
+
+styleAttrs : Bool -> List (Html.Attribute msg)
+styleAttrs over =
+    [ classList
+        [ ( "drop-area", True )
+        , ( "active", not over )
+        , ( "over", over )
+        , ( "animation", over )
+        ]
+    ]

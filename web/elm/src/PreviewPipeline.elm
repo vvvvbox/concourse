@@ -1,14 +1,25 @@
-module PreviewPipeline exposing (..)
+module PreviewPipeline exposing
+    ( Msg(..)
+    , PreviewPipeline(..)
+    , footerView
+    , headerView
+    , pauseToggleView
+    , togglePipelinePaused
+    , transitionView
+    , view
+    )
 
 import Concourse
-import DashboardPreview
+import Concourse.Pipeline
 import Dashboard.Pipeline as Pipeline
-import Time exposing (Time)
+import DashboardPreview
 import Html exposing (Html)
 import Html.Attributes exposing (class, classList, draggable, href)
 import Html.Events exposing (onMouseEnter)
-import StrictEvents exposing (onLeftClick)
 import Routes
+import StrictEvents exposing (onLeftClick)
+import Task
+import Time exposing (Time)
 
 
 type PreviewPipeline
@@ -16,7 +27,8 @@ type PreviewPipeline
 
 
 type Msg
-    = Tooltip String String
+    = Noop
+    | Tooltip String String
     | TogglePipelinePaused Concourse.Pipeline
 
 
@@ -69,3 +81,13 @@ pauseToggleView pipeline =
         , onLeftClick <| TogglePipelinePaused pipeline
         ]
         []
+
+
+togglePipelinePaused : Concourse.Pipeline -> Concourse.CSRFToken -> Cmd Msg
+togglePipelinePaused pipeline csrfToken =
+    Task.attempt (always Noop) <|
+        if pipeline.paused then
+            Concourse.Pipeline.unpause pipeline.teamName pipeline.name csrfToken
+
+        else
+            Concourse.Pipeline.pause pipeline.teamName pipeline.name csrfToken

@@ -1,4 +1,11 @@
-module PreviewGroup exposing (..)
+module PreviewGroup exposing
+    ( Msg(..)
+    , PreviewGroup
+    , draggableAttrs
+    , pipelineAttrs
+    , view
+    , viewDragItem
+    )
 
 import Concourse.PipelineStatus
 import Dashboard.Pipeline as Pipeline
@@ -13,6 +20,8 @@ import Html.Attributes exposing (attribute, class, classList, draggable, id)
 import Html.Events exposing (on)
 import Json.Decode
 import PreviewPipeline
+import Regex exposing (HowMany(All), regex, replace)
+import Simple.Fuzzy exposing (filter, match, root)
 import ZipList
 
 
@@ -80,3 +89,88 @@ draggableAttrs zipList =
     , on "dragstart" (Json.Decode.succeed (DragMsg <| DragEvent.DragStart zipList))
     , on "dragend" (Json.Decode.succeed (DragMsg DragEvent.Drop))
     ]
+
+
+filterTerms : String -> List String
+filterTerms =
+    replace All (regex "team:\\s*") (\_ -> "team:")
+        >> replace All (regex "status:\\s*") (\_ -> "status:")
+        >> String.words
+        >> List.filter (not << String.isEmpty)
+
+
+filter : String -> List PreviewGroup -> List PreviewGroup
+filter =
+    filterTerms >> flip (List.foldl filterGroupsByTerm)
+
+
+pipelines : PreviewGroup -> List PreviewPipeline.PreviewPipeline
+pipelines pg =
+    case pg.group of
+        DragState.NotDragging ps ->
+            ps
+
+        DragState.Dragging dl ->
+            []
+
+
+filterPipelinesByTerm : String -> PreviewGroup -> PreviewGroup
+filterPipelinesByTerm term pg =
+    let
+        searchStatus =
+            String.startsWith "status:" term
+
+        statusSearchTerm =
+            if searchStatus then
+                String.dropLeft 7 term
+
+            else
+                term
+
+        pgPipelines =
+            pipelines pg
+
+        filterByStatus =
+            fuzzySearch (\(PreviewPipeline.PreviewPipeline _ p) -> p |> Pipeline.pipelineStatus |> Concourse.PipelineStatus.show) statusSearchTerm pgPipelines
+
+        filteredPipelines =
+            if searchStatus then
+                filterByStatus
+
+            else
+                fuzzySearch (\(PreviewPipeline.PreviewPipeline _ p) -> p.pipeline.name) term pgPipelines
+    in
+    { pg | group = DragState.NotDragging filteredPipelines }
+
+
+filterGroupsByTerm : String -> List PreviewGroup -> List PreviewGroup
+filterGroupsByTerm term groups =
+    let
+        searchTeams =
+            String.startsWith "team:" term
+
+        teamSearchTerm =
+            if searchTeams then
+                String.dropLeft 5 term
+
+            else
+                term
+    in
+    if searchTeams then
+        fuzzySearch .teamName teamSearchTerm groups
+
+    else
+        groups |> List.map (filterPipelinesByTerm term)
+
+
+fuzzySearch : (a -> String) -> String -> List a -> List a
+fuzzySearch map needle records =
+    let
+        negateSearch =
+            String.startsWith "-" needle
+    in
+    if negateSearch then
+        List.filter (not << Simple.Fuzzy.match needle << map) records
+
+    else
+        List.filter (Simple.Fuzzy.match needle << map) records

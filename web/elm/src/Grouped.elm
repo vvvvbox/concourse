@@ -1,13 +1,19 @@
-module Grouped exposing (..)
+module Grouped exposing (Grouped, header, ordering, pipelineNotSetView)
 
 import Html exposing (Html)
 import Html.Attributes exposing (class, classList)
+import Ordering exposing (Ordering)
 
 
 type alias Grouped a =
     { group : a
     , teamName : String
     }
+
+
+ordering : Ordering (Grouped a)
+ordering =
+    Ordering.byField .teamName
 
 
 header : Grouped a -> Html msg

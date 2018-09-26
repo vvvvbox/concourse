@@ -1,21 +1,44 @@
-module Dashboard.SubState exposing (..)
+module Dashboard.SubState exposing
+    ( SubState
+    , TeamData(..)
+    , apiData
+    , apiDataLens
+    , bodyLens
+    , detailsLens
+    , detailsOptional
+    , hideFooterCounterLens
+    , hideFooterLens
+    , setApiData
+    , showFooter
+    , teamData
+    , tick
+    , updateFooter
+    )
 
 import Concourse
-import Dashboard.Group as Group
 import Dashboard.Details as Details
-import Monocle.Optional
+import Dashboard.Group as Group
+import DashboardBody
+import Html exposing (Html)
 import Monocle.Lens
+import Monocle.Optional
 import MonocleHelpers exposing (..)
 import Time exposing (Time)
 
 
 type alias SubState =
     { details : Maybe Details.Details
-    , teamData : TeamData
+    , body : DashboardBody.DashboardBody
     , hideFooter : Bool
     , hideFooterCounter : Time
     , csrfToken : String
+    , version : String
     }
+
+
+bodyLens : Monocle.Lens.Lens SubState DashboardBody.DashboardBody
+bodyLens =
+    Monocle.Lens.Lens .body (\db ss -> { ss | body = db })
 
 
 detailsOptional : Monocle.Optional.Optional SubState Details.Details
@@ -26,11 +49,6 @@ detailsOptional =
 detailsLens : Monocle.Lens.Lens SubState (Maybe Details.Details)
 detailsLens =
     Monocle.Lens.Lens .details (\d ss -> { ss | details = d })
-
-
-teamDataLens : Monocle.Lens.Lens SubState TeamData
-teamDataLens =
-    Monocle.Lens.Lens .teamData (\td ss -> { ss | teamData = td })
 
 
 hideFooterLens : Monocle.Lens.Lens SubState Bool
@@ -58,6 +76,7 @@ updateFooter : Time.Time -> SubState -> SubState
 updateFooter counter =
     if counter + Time.second > 5 * Time.second then
         hideFooterLens.set True
+
     else
         hideFooterCounterLens.set (counter + Time.second)
 
