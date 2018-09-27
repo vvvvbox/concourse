@@ -66,7 +66,12 @@ func (index GroupIndex) Slice() []interface{} {
 }
 
 func (index GroupIndex) FindEquivalent(obj interface{}) (interface{}, bool) {
-	return atc.GroupConfigs(index).Lookup(name(obj))
+	return nil, false
+}
+
+func (index GroupIndex) FindEquivalentWithOrder(obj interface{}) (interface{}, int, bool) {
+	thing, order, found := atc.GroupConfigs(index).Lookup(name(obj))
+	return thing, order, found
 }
 
 type JobIndex atc.JobConfigs
@@ -112,6 +117,48 @@ func (index ResourceTypeIndex) Slice() []interface{} {
 
 func (index ResourceTypeIndex) FindEquivalent(obj interface{}) (interface{}, bool) {
 	return atc.ResourceTypes(index).Lookup(name(obj))
+}
+
+func groupDiffIndices(oldIndex GroupIndex, newIndex GroupIndex) Diffs {
+	diffs := Diffs{}
+
+	for _, thing := range oldIndex.Slice() {
+		newThing, _, found := newIndex.FindEquivalentWithOrder(thing)
+		if !found {
+			diffs = append(diffs, Diff{
+				Before: thing,
+				After:  nil,
+			})
+			continue
+		}
+
+		if practicallyDifferent(thing, newThing) {
+			diffs = append(diffs, Diff{
+				Before: thing,
+				After:  newThing,
+			})
+		}
+
+		//if oldIndexNum != newIndexNum {
+		//	diffs = append(diffs, Diff{
+		//		Before: thing,
+		//		After:  newThing,
+		//	})
+		//}
+	}
+
+	for _, thing := range newIndex.Slice() {
+		_, found := oldIndex.FindEquivalent(thing)
+		if !found {
+			diffs = append(diffs, Diff{
+				Before: nil,
+				After:  thing,
+			})
+			continue
+		}
+	}
+
+	return diffs
 }
 
 func diffIndices(oldIndex Index, newIndex Index) Diffs {
