@@ -3,16 +3,17 @@ package worker
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"code.cloudfoundry.org/clock"
 	"code.cloudfoundry.org/garden"
 	"code.cloudfoundry.org/lager"
+	"github.com/concourse/baggageclaim"
 	"github.com/concourse/concourse/atc/creds"
 	"github.com/concourse/concourse/atc/db"
 	"github.com/concourse/concourse/atc/db/lock"
 	"github.com/concourse/concourse/atc/metric"
-	"github.com/concourse/baggageclaim"
 )
 
 const creatingContainerRetryDelay = 1 * time.Second
@@ -317,6 +318,20 @@ func (p *containerProvider) constructGardenWorkerContainer(
 	)
 }
 
+type byMountPath []VolumeMount
+
+func (s byMountPath) Len() int {
+	return len(s)
+}
+func (s byMountPath) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+func (s byMountPath) Less(i, j int) bool {
+	path1 := s[i].MountPath
+	path2 := s[j].MountPath
+	return path1 < path2
+}
+
 func (p *containerProvider) createGardenContainer(
 	logger lager.Logger,
 	creatingContainer db.CreatingContainer,
@@ -374,6 +389,9 @@ func (p *containerProvider) createGardenContainer(
 		p.clock,
 	)
 
+	inputDestinationPaths := make(map[string]bool)
+	inputOutputMounts := []VolumeMount{}
+
 	for _, inputSource := range spec.Inputs {
 		var inputVolume Volume
 
@@ -418,13 +436,19 @@ func (p *containerProvider) createGardenContainer(
 			}
 		}
 
-		volumeMounts = append(volumeMounts, VolumeMount{
+		inputOutputMounts = append(inputOutputMounts, VolumeMount{
 			Volume:    inputVolume,
 			MountPath: inputSource.DestinationPath(),
 		})
+
+		inputDestinationPaths[inputSource.DestinationPath()] = true
 	}
 
 	for _, outputPath := range spec.Outputs {
+		if inputDestinationPaths[outputPath] {
+			continue
+		}
+
 		outVolume, volumeErr := p.volumeClient.FindOrCreateVolumeForContainer(
 			logger,
 			VolumeSpec{
@@ -439,7 +463,7 @@ func (p *containerProvider) createGardenContainer(
 			return nil, volumeErr
 		}
 
-		volumeMounts = append(volumeMounts, VolumeMount{
+		inputOutputMounts = append(inputOutputMounts, VolumeMount{
 			Volume:    outVolume,
 			MountPath: outputPath,
 		})
@@ -456,6 +480,9 @@ func (p *containerProvider) createGardenContainer(
 			bindMounts = append(bindMounts, bindMount)
 		}
 	}
+
+	sort.Sort(byMountPath(inputOutputMounts))
+	volumeMounts = append(volumeMounts, inputOutputMounts...)
 
 	volumeHandleMounts := map[string]string{}
 	for _, mount := range volumeMounts {
