@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"code.cloudfoundry.org/lager"
 	"github.com/concourse/baggageclaim/baggageclaimcmd"
@@ -30,6 +31,7 @@ type WorkerCommand struct {
 	BindIP   flag.IP `long:"bind-ip"   default:"127.0.0.1" description:"IP address on which to listen for the Garden server."`
 	BindPort uint16  `long:"bind-port" default:"7777"      description:"Port on which to listen for the Garden server."`
 	PeerIP   flag.IP `long:"peer-ip" description:"IP used to reach this worker from the ATC nodes."`
+	ForwardRebalanceTime time.Duration `long:"forward-rebalance-time" description:"For forwarded mode only. The interval on which a new connection will be created by the worker, also acts as the idle timeout time of the stale connections. A value of 0 would mean that the Worker will not create additional connections." default:"0s"`
 
 	Garden GardenBackend `group:"Garden Configuration" namespace:"garden"`
 
@@ -87,6 +89,8 @@ func (cmd *WorkerCommand) Runner(args []string) (ifrit.Runner, error) {
 			beaconConfig.Registration.Mode = "direct"
 		} else {
 			beaconConfig.Registration.Mode = "forward"
+			logger.Info(fmt.Sprintln("Rebalance Time: ", cmd.ForwardRebalanceTime ))
+			beaconConfig.Registration.RebalanceTime = cmd.ForwardRebalanceTime
 			beaconConfig.GardenForwardAddr = fmt.Sprintf("%s:%d", cmd.BindIP.IP, cmd.BindPort)
 			beaconConfig.BaggageclaimForwardAddr = fmt.Sprintf("%s:%d", cmd.Baggageclaim.BindIP.IP, cmd.Baggageclaim.BindPort)
 
